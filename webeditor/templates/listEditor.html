@@ -1,0 +1,31 @@
+<!DOCTYPE html>
+<html lang="ru">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Редактирование IP-адресов</title>
+    <link rel="stylesheet" type="text/css" href="/static/style/editor.css">
+    <script src="static/js/jquery.min.js"></script>
+</head>
+
+<body>
+    <div class="container">
+        <h2>Редактирование списка IP-адресов</h2>
+        <div class="ip-container" id="ip-container">
+            {% for ip in ip_list %}
+            <div class="ip-box">{{ ip }}</div>
+            {% endfor %}
+            <span class="placeholder" id="placeholder">Введите IP-адрес</span>
+            <input type="text" id="ip-input" class="input-field">
+        </div>
+        <p class="error-message" id="error-message">Некоторые IP-адреса введены неверно</p>
+        <button class="button" id="sort-button">Сортировать</button>
+        <button class="button" id="save-button">Сохранить</button>
+        <button class="button" id="cancel-button">Отменить</button>
+        <button class="button" id="logout-button">Выход</button>
+    </div>
+    <script src="/static/js/editor.post.js"></script>
+</body>
+
+</html>

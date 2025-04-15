@@ -1,0 +1,21 @@
+version: "3"
+
+services:
+  webeditor:
+    container_name: "webeditor"
+    hostname: "webeditor"
+    build: ./webeditor
+    image: waf-webeditor
+    environment:
+      - TZ='Europe/Moscow'
+    ports:
+      - "6700:6700"
+    volumes:
+      - ./data:/data
+      - ./db:/db
+    restart: unless-stopped
+    security_opt:
+      - no-new-privileges:true
+    user: appuser
+    env_file:
+      - ./.env

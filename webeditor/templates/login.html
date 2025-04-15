@@ -1,0 +1,44 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Авторизация</title>
+    <link rel="stylesheet" type="text/css" href="/static/style/login.css">
+    <script src="static/js/jquery.min.js"></script>
+</head>
+
+<body>
+    <div class="container">
+        <div class="logo">
+            <img src="static/images/logo.png" alt="Логотип компании">
+        </div>
+        <h2>Вход в систему</h2>
+        <form id="loginForm" method="POST">
+            <input type="text" id="username" name="username" class="input-field" placeholder="Логин" required>
+            <input type="password" id="password" name="password" class="input-field" placeholder="Пароль" required>
+            <div class="forgot-password">
+                <a href="#" id="forgotPasswordLink">Забыли пароль?</a>
+            </div>
+            <button type="submit" class="login-button">Войти</button>
+            <button type="button" class="register-button" id="registerButton">Зарегистрироваться</button>
+            <p class="error-message" id="errorMessage">Неверный логин или пароль</p>
+        </form>
+    </div>
+    <div id="recoverPasswordModal">
+        <div class="modal-content">
+            <h3>Восстановление пароля</h3>
+            <form id="recoverPasswordForm">
+                <div class="form-group">
+                    <label for="email">Введите ваш email:</label>
+                    <input type="email" class="form-control" id="email" required>
+                </div>
+                <button type="submit" class="btn">Подтвердить</button>
+                <button type="button" id="cancelRecoverPassword" class="btn">Отмена</button>
+            </form>
+        </div>
+    </div>
+    <script src="/static/js/login.post.js"></script>
+</body>
+
+</html>
