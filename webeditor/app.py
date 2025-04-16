@@ -14,6 +14,7 @@ import re
 import bcrypt
 import xml.etree.ElementTree as ET
 import logging
+import socket
 
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
 logger = logging.getLogger(__name__)
@@ -197,6 +198,10 @@ def login():
         username = request.form.get('username')
         password = request.form.get('password')
 
+        if not re.fullmatch(r"[\w\-]+", username):
+            logger.error("Некорректное имя пользователя. User id %s, ip %s", username, request.headers.get('X-Forwarded-For', request.remote_addr))
+            return jsonify({'success': False, 'message': 'Ошибка в имени пользователя'}), 400
+        
         if not password:
             logger.error("Неуспешная попытка входа. Empty password: username %s, ip: %s", username, request.headers.get('X-Forwarded-For', request.remote_addr))
 
@@ -268,6 +273,8 @@ def save_ip_list():
         try:
             ip_data = json.loads(data)
             ip_list = ip_data.get('ip_list', '')
+            for ip in ip_list:
+                socket.inet_aton(ip)
             # Сохраняем список IP в базу данных
             conn = get_db_connection()
             c = conn.cursor()
@@ -282,6 +289,8 @@ def save_ip_list():
                 file.write("\n".join(ip_list))
             logger.info("Успешное изменение списка. User id %s, ip %s", session['user_id'], request.headers.get('X-Forwarded-For', request.remote_addr))
             return jsonify({'message': 'Saved successfully'}), 200
+        except OSError as e:
+            return jsonify({'message': f'Ошибка в формате ip-адреса'}), 400
         except Exception as e:
             return jsonify({'message': f'Error: {str(e)}'}), 400
 
@@ -347,6 +356,10 @@ def register():
 @app.route('/recover_password', methods=['POST'])
 def recover_password():
     email = request.form.get('email')
+
+    if not re.fullmatch(r"[\w\-@\.]+", email):
+        logger.error("Некорректный email. email %s, ip %s", email, request.headers.get('X-Forwarded-For', request.remote_addr))
+        return jsonify({'success': False, 'message': 'Ошибка в email'}), 400
     
     user_exists = check_user_by_email(email)
     print
