@@ -7,6 +7,7 @@
     <title>Редактирование IP-адресов</title>
     <link rel="stylesheet" type="text/css" href="/static/style/editor.css">
     <script src="static/js/jquery.min.js"></script>
+    <script src="static/js/socket.io.min.js"></script>
 </head>
 
 <body>
@@ -19,13 +20,26 @@
             <span class="placeholder" id="placeholder">Введите IP-адрес</span>
             <input type="text" id="ip-input" class="input-field">
         </div>
+        <p id="status"></p>
         <p class="error-message" id="error-message">Некоторые IP-адреса введены неверно</p>
         <button class="button" id="sort-button">Сортировать</button>
         <button class="button" id="save-button">Сохранить</button>
         <button class="button" id="cancel-button">Отменить</button>
         <button class="button" id="logout-button">Выход</button>
     </div>
-    <script src="/static/js/editor.post.js"></script>
+    <!-- Модальное окно -->
+    <div id="reload-modal">
+        <div class="modal-content">
+            <h3>Файл был обновлен пользователем <span id="updated-user" class="highlight"></span>. Перезагрузить?</h3>
+            <form id="reload-form">
+                <div class="form-group">
+                    <button class="button" type="button" id="reload">Перезагрузить</button>
+                    <button class="button" type="button" id="dismiss">Оставить как есть</button>
+                </div>
+            </form>
+        </div>
+    </div>
+    <script src="static/js/editor.post.js"></script>
 </body>
 
 </html>

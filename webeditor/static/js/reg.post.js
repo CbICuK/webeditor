@@ -64,7 +64,7 @@ $(document).ready(function () {
             data: formData,
             success: function (response) {
                 if (response.success) {
-                    $('#messageBox').text('Регистрация прошла успешно! Проверьте вашу почту для подтверждения.').css('color', 'green');
+                    $('#messageBox').text(response.message).css('color', 'green');
                 } else {
                     $('#messageBox').text(response.responseJSON.message).css('color', 'red');
                 }

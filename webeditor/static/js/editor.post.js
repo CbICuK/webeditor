@@ -1,5 +1,8 @@
 let l = $("#ip-input").val().length
 let f = false;
+
+const socket = io();
+
 if (l === 0) {
     f = true;
 }
@@ -118,6 +121,31 @@ function sortIPs() {
     bindIPBoxEvents();
 }
 
+function reload_list() {
+    let ipInput = $("#ip-input");
+
+    $.ajax({
+        url: '/get_ip_list',
+        method: 'GET',
+        success: function (response) {
+            if (response && response.ip_list) {
+                $("#ip-container").empty();
+                response.ip_list.forEach(function (ip) {
+                    const ipBox = $('<div class="ip-box"></div>').text(ip);
+                    $("#ip-container").append(ipBox);
+                    bindIPBoxEvents();
+                });
+                $("#ip-container").append(ipInput);
+                ipInput.val('');
+                togglePlaceholder();
+            }
+        },
+        error: function () {
+            alert("Ошибка загрузки списка IP-адресов.");
+        }
+    });
+}
+
 // Обработчик для ввода данных в поле input
 $("#ip-container").on("input", '#ip-input', function () {
     $("#error-message").hide(); // Прячем ошибку при изменении текста
@@ -175,13 +203,20 @@ $(".container").on("click", "#save-button", function () {
         type: 'POST',
         contentType: 'application/json',
         data: JSON.stringify({
-            ip_list: ipList
+            ip_list: ipList,
+            sid: socket.id
         }),
         success: function () {
+            //console.log("IP-адреса сохранены успешно!");
             alert("IP-адреса сохранены успешно!");
         },
-        error: function () {
-            alert("Ошибка сохранения. Попробуйте снова.");
+        error: function (response) {
+            if (response.status == 403) {
+                alert("Вы не авторизованы или сессия истекла. Войдите в систему.");
+            } else {
+                alert("Ошибка сохранения. Попробуйте снова.");
+            }
+            
         }
     });
 });
@@ -199,29 +234,17 @@ $(".container").on("click", "#logout-button", function () {
     });
 });
 
-$(".container").on("click", "#cancel-button", function () {
-    let ipInput = $("#ip-input");
+$(".container").on("click", "#cancel-button", reload_list);
 
-    $.ajax({
-        url: '/get_ip_list',
-        method: 'GET',
-        success: function (response) {
-            if (response && response.ip_list) {
-                $("#ip-container").empty();
-                response.ip_list.forEach(function (ip) {
-                    const ipBox = $('<div class="ip-box"></div>').text(ip);
-                    $("#ip-container").append(ipBox);
-                    bindIPBoxEvents();
-                });
-                $("#ip-container").append(ipInput);
-                ipInput.val('');
-                togglePlaceholder();
-            }
-        },
-        error: function () {
-            alert("Ошибка загрузки списка IP-адресов.");
-        }
-    });
+$("#reload").on("click", function() {
+    $('#reload-modal').hide();
+    $('#error-message').hide();
+    reload_list();
+});
+
+$("#dismiss").on("click", function() {
+    $('#reload-modal').hide();
+    $('#error-message').text("Вы продолжаете редактировать устаревшую версию списка.").show();
 });
 
 $(document).on("keydown", function (event) {
@@ -264,6 +287,11 @@ $(document).on("keydown", function (event) {
 
 $(document).ready(function () {
     bindIPBoxEvents();
+});
+
+socket.on('updated', (username) => {
+    $("#updated-user").text(username);
+    $('#reload-modal').css('display', 'flex');
 });
 
 togglePlaceholder();

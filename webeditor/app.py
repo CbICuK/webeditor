@@ -1,7 +1,8 @@
 from flask import Flask, request, jsonify, session, redirect, render_template, url_for, g, make_response, abort, flash, send_from_directory
+from flask_socketio import SocketIO, emit
 from flask_bcrypt import Bcrypt 
 from ldap3 import Server, Connection, ALL
-from datetime import timedelta
+from datetime import timedelta, datetime
 from itsdangerous import URLSafeTimedSerializer
 from email.mime.text import MIMEText
 from email.mime.text import MIMEText
@@ -15,11 +16,20 @@ import bcrypt
 import xml.etree.ElementTree as ET
 import logging
 import socket
+import hashlib
+import threading
+import redis
+#from dotenv import load_dotenv 
+
+#load_dotenv(dotenv_path='/home/example/user/Desktop/develope/webeditor/.env')
+
 
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
 logger = logging.getLogger(__name__)
 
 app = Flask(__name__)
+socketio = SocketIO(app, cors_allowed_origins="*", async_mode='eventlet')
+lock = threading.Lock()
 
 # Конфигурация LDAP
 LDAP_SERVER = os.getenv("LDAP_SERVER")
@@ -43,6 +53,27 @@ IP_LIST_FILE = os.getenv("IP_LIST_FILE")
 
 PASSWORD_LEN = int(os.getenv("PASSWORD_LENGTH"))
 PASSWORD_SALT = os.getenv("PASSWORD_SALT")
+
+# Redis
+REDIS_BROKER_HOST: str = os.getenv("REDIS_BROKER_HOST")
+REDIS_DB_N: str = os.getenv("REDIS_DB_N")
+REDIS_PORT: str = os.getenv("REDIS_PORT")
+REDIS_BROKER_URL: str = os.getenv("REDIS_BROKER_URL")
+REDIS_USER: str = os.getenv("REDIS_USER")
+REDIS_PASS: str = os.getenv("REDIS_PASS")
+
+SSL_CA_CERT: str = os.getenv("SSL_CA_CERT")
+
+redis_connect = redis.Redis(
+    host=REDIS_BROKER_HOST,
+    port=REDIS_PORT,
+    db=REDIS_DB_N,
+    ssl=True,
+    ssl_cert_reqs="required",
+    ssl_keyfile="webeditor.key",
+    ssl_certfile="webeditor.crt",
+    ssl_ca_certs=SSL_CA_CERT
+)
 
 bcrypt = Bcrypt(app) 
 
@@ -201,7 +232,7 @@ def login():
         if not re.fullmatch(r"[\w\-]+", username):
             logger.error("Некорректное имя пользователя. User id %s, ip %s", username, request.headers.get('X-Forwarded-For', request.remote_addr))
             return jsonify({'success': False, 'message': 'Ошибка в имени пользователя'}), 400
-        
+
         if not password:
             logger.error("Неуспешная попытка входа. Empty password: username %s, ip: %s", username, request.headers.get('X-Forwarded-For', request.remote_addr))
 
@@ -212,7 +243,7 @@ def login():
         # Проверка данных пользователя
         conn = get_db_connection()
         cursor = conn.cursor()
-        cursor.execute("SELECT id, username, password, enabled, is_admin FROM users WHERE username = ?", (username,))
+        cursor.execute("SELECT id, username, password, enabled, is_admin FROM users WHERE username = ? COLLATE NOCASE", (username,))
         user = cursor.fetchone()
 
         if not user:
@@ -223,7 +254,6 @@ def login():
             logger.error("Неуспешная попытка входа. Пользователь неактивен: id %s, username %s, admin role %s, ip %s", user[0], user[1], bool(user[4]), request.headers.get('X-Forwarded-For', request.remote_addr))
             return jsonify({'status': 'error', 'message': 'Пользователь неактивен'}), 403
 
-
         # Проверяем пароль
         if bcrypt.check_password_hash(user[2], password):  # user[2] - хэшированный пароль
             # Сохраняем данные пользователя в сессии
@@ -231,7 +261,7 @@ def login():
             session['username'] = user[1]
             session['is_admin'] = user[4]
             session.permanent = True
-            app.permanent_session_lifetime = timedelta(minutes=10)
+            app.permanent_session_lifetime = timedelta(minutes=30)
             success = True
             redirect_url = url_for('editor')
             
@@ -273,6 +303,7 @@ def save_ip_list():
         try:
             ip_data = json.loads(data)
             ip_list = ip_data.get('ip_list', '')
+            sid = ip_data.get('sid', '')
             for ip in ip_list:
                 socket.inet_aton(ip)
             # Сохраняем список IP в базу данных
@@ -287,7 +318,8 @@ def save_ip_list():
             # Сохраняем список IP в файл
             with open(IP_LIST_FILE, 'w') as file:
                 file.write("\n".join(ip_list))
-            logger.info("Успешное изменение списка. User id %s, ip %s", session['user_id'], request.headers.get('X-Forwarded-For', request.remote_addr))
+            logger.info("Успешное изменение списка. User id %s, ip %s", session['username'], request.headers.get('X-Forwarded-For', request.remote_addr))
+            socketio.emit('updated', redis_connect.get(sid).decode(), skip_sid=sid)
             return jsonify({'message': 'Saved successfully'}), 200
         except OSError as e:
             return jsonify({'message': f'Ошибка в формате ip-адреса'}), 400
@@ -332,25 +364,47 @@ def register():
 
         # Добавление пользователя в базу данных
         try:
+            token = serializer.dumps(email, salt=EMAIL_SALT)
+            confirm_url = url_for('confirm_email', token=token, _external=True)
+
             conn = get_db_connection()
             cursor = conn.cursor()
-            cursor.execute('INSERT INTO users (username, password, cn, email) VALUES (?, ?, ?, ?)', (samaccountname, hashed_password, cn, email))
-            conn.commit()
-        except sqlite3.IntegrityError:
-            return jsonify({'success': False, 'message': 'Пользователь уже существует'}), 400
-
-        token = serializer.dumps(email, salt=EMAIL_SALT)
-        confirm_url = url_for('confirm_email', token=token, _external=True)
-
-        # Отправка email с подтверждением
-        subject = 'Подтверждение регистрации'
-        body = f'Здравствуйте! Работник {cn} зарегистрировался в системе редактирования списков митигатора.\n\nЕсли вы согласны предоставить такой доступ, перейдите по ссылке для активации аккаунта: {confirm_url}'
-        try:
-            send_email(get_admin_emails(), subject, body)
-            return jsonify({'success': True, 'message': 'Регистрация прошла успешно! Письмо с подтверждением регистарции отправлено администратору\n\nОжидайте активации аккаунта администратором, на Вашу почту придет соответсвующее уведомление.'})
+            cursor.execute('SELECT enabled, register_date FROM users WHERE username = ?', (samaccountname,))
+            registred = cursor.fetchone()
+            if not registred:
+                cursor.execute('INSERT INTO users (username, password, cn, email) VALUES (?, ?, ?, ?)', (samaccountname, hashed_password, cn, email))
+                conn.commit()
+                # Отправка email с подтверждением
+                subject = 'Подтверждение регистрации'
+                body = f'Здравствуйте! Работник {cn} зарегистрировался в системе редактирования списков митигатора.\n\nЕсли вы согласны предоставить такой доступ, перейдите по ссылке для активации аккаунта: {confirm_url}\n\nСсылка действительна в течение суток!'
+                try:
+                    send_email(get_admin_emails(), subject, body)
+                    return jsonify({'success': True, 'message': 'Регистрация прошла успешно. Письмо с подтверждением регистарции отправлено администратору. Ожидайте активации аккаунта администратором, на Вашу почту придет соответсвующее уведомление'})
+                except Exception as e:
+                    return f"Ошибка при отправке письма: {str(e)}"
+            else:
+                activated = registred[0]
+                register_date = registred[1]
+                if activated:
+                    return jsonify({'success': False, 'message': 'Пользователь уже существует'}), 400
+                else:
+                    if datetime.fromisoformat(register_date) + timedelta(days=1) < datetime.now():
+                        current_date = datetime.now().strftime('%Y-%m-%d %H:%M:%S')
+                        cursor.execute('UPDATE users SET password = ?, register_date = ? WHERE username = ?', (hashed_password, current_date, samaccountname))
+                        conn.commit()
+                        # Отправка email с подтверждением
+                        subject = 'Подтверждение регистрации'
+                        body = f'Здравствуйте! Работник {cn} повторно зарегистрировался в системе редактирования списков митигатора.\n\nЕсли вы согласны предоставить такой доступ, перейдите по ссылке для активации аккаунта: {confirm_url}\n\nСсылка действительна в течение суток!'
+                        try:
+                            send_email(get_admin_emails(), subject, body)
+                            return jsonify({'success': True, 'message': 'Регистрация прошла успешно. Письмо с подтверждением регистарции отправлено администратору. Ожидайте активации аккаунта администратором, на Вашу почту придет соответсвующее уведомление'})
+                        except Exception as e:
+                            return f"Ошибка при отправке письма: {str(e)}"
+                    else:
+                        return jsonify({'success': False, 'message': 'Пользователь уже существует и не активирован. Обратитесь к администратору для активации'}), 400
         except Exception as e:
-            return f"Ошибка при отправке письма: {str(e)}"
-
+            logger.error("Что-то пошло не так. %s, ip %s", e, request.headers.get('X-Forwarded-For', request.remote_addr))
+            return jsonify({'success': False, 'message': 'Произошла ошибка при регистрации. Обратитесь к администратору'}), 500
     return render_template('register.html')
 
 @app.route('/recover_password', methods=['POST'])
@@ -414,9 +468,9 @@ def reset_password(token):
 def confirm_email(token):
     conn = get_db_connection()
     cursor = conn.cursor()
-        
+
     try:
-        email = serializer.loads(token, salt=EMAIL_SALT, max_age=3600)  # Срок действия токена - 1 час
+        email = serializer.loads(token, salt=EMAIL_SALT, max_age=86400)  # Срок действия токена - 1 сутки
     except Exception as e:
         logger.error("Некорректная попытка активации пользователя. Использован токен %s, ip %s", token, request.headers.get('X-Forwarded-For', request.remote_addr))
         return "Время действия ссылки истекло или ссылка недействительна."
@@ -450,6 +504,16 @@ def close_connection(exception):
     if db is not None:
         db.close()
 
+@socketio.on('connect')
+def connected(self):
+    if 'username' in session:
+        redis_connect.set(request.sid, session["username"],ex=3600)
+
+@socketio.on_error_default
+def error_handler(e):
+    print('An error has occurred: ' + str(e))
+    
 if __name__ == '__main__':
     init_db()
-    app.run(host="0.0.0.0", port=6700, debug=True)
+    socketio.run(app, host="0.0.0.0", port=6700, debug=True)
+    #app.run(host="0.0.0.0", port=6700, debug=True)

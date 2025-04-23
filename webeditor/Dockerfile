@@ -6,15 +6,14 @@ ARG https_proxy=http://proxy:3128 \
     UID=1111 \
     GID=1111
 
+
+
 ENV PATH="/home/$UNAME/.local/bin:$PATH" \
     FLASK_APP="app.py" \
     FLASK_ENV="production" \
     PYTHONUNBUFFERED=1
 
 
-
-#RUN groupadd -g $GID -o $UNAME && \
-#    useradd -m -u $UID -g $GID -o -s /bin/bash $UNAME && \
 RUN addgroup --gid $GID $UNAME && \
     adduser --disabled-password --ingroup "$UNAME" --uid $UID $UNAME && \
     mkdir /data && mkdir /db && \

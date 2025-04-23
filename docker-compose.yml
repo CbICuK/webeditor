@@ -19,3 +19,36 @@ services:
     user: appuser
     env_file:
       - ./.env
+  redis:
+    container_name: redis
+    hostname: redis
+    build:
+      context: ./redis
+      dockerfile: ./Dockerfile
+      args:
+        HTTP_PROXY: http://proxy:3128
+        HTTPS_PROXY: http://proxy:3128
+        NO_PROXY: localhost,127.0.0.0/8,10.0.0.0/8,192.168.0.0/16
+    restart: always
+    user: redis
+    environment:
+      - TZ='Europe/Moscow'
+    volumes:
+      - redis_data:/data
+    command: ["redis-server", "/app/redis.conf"]
+    networks:
+      backend:
+        ipv4_address: 172.99.5.10
+
+networks:
+  backend:
+    name: webeditor-net
+    driver: bridge
+    ipam:
+      config:
+        - subnet: 172.99.0.0/16
+          ip_range: 172.99.5.0/24
+          gateway: 172.99.5.1
+
+volumes:
+  redis_data:
